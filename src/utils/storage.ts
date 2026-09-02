@@ -7,7 +7,7 @@ export const DEFAULT_BATCH_CONFIG: BatchConfig = {
   siglaPilha: 'LIC-2023',
   sequencialInicial: 1,
   logoUrl: '/logo-faina.png',
-  nomeInstitucional: 'CONTROLADORIA-GERAL DO MUNICÍPIO',
+  nomeInstitucional: 'CONTROLADORIA-GERAL DO MUNICÍPIO DE FAINA',
   ressalvaJuridica: 'Etiquetagem gerada através de esforços da CGM para organização do arquivo da administração 2021/2024. O conteúdo no interior dessa pasta não foi verificado.',
   mostrarMarcasCorte: true,
 };
@@ -89,7 +89,11 @@ export function loadStoredConfig(): BatchConfig {
     const raw = localStorage.getItem(STORAGE_KEY_CONFIG);
     if (raw) {
       const parsed = JSON.parse(raw);
-      return { ...DEFAULT_BATCH_CONFIG, ...parsed };
+      const config = { ...DEFAULT_BATCH_CONFIG, ...parsed };
+      if (!config.nomeInstitucional || config.nomeInstitucional === 'CONTROLADORIA-GERAL DO MUNICÍPIO') {
+        config.nomeInstitucional = 'CONTROLADORIA-GERAL DO MUNICÍPIO DE FAINA';
+      }
+      return config;
     }
   } catch (e) {
     console.error('Falha ao carregar config do localStorage', e);

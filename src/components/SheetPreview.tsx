@@ -55,18 +55,18 @@ export const SheetPreview: React.FC<SheetPreviewProps> = ({
         {config.mostrarMarcasCorte && (
           <>
             {/* Canto superior esquerdo */}
-            <div className="absolute -top-4 -left-4 w-4 h-4 border-r border-b border-slate-600 pointer-events-none" />
+            <div className="absolute -top-4 -left-4 w-4 h-4 border-r-2 border-b-2 border-black pointer-events-none" />
             {/* Canto superior direito */}
-            <div className="absolute -top-4 -right-4 w-4 h-4 border-l border-b border-slate-600 pointer-events-none" />
+            <div className="absolute -top-4 -right-4 w-4 h-4 border-l-2 border-b-2 border-black pointer-events-none" />
             {/* Canto inferior esquerdo */}
-            <div className="absolute -bottom-4 -left-4 w-4 h-4 border-r border-t border-slate-600 pointer-events-none" />
+            <div className="absolute -bottom-4 -left-4 w-4 h-4 border-r-2 border-t-2 border-black pointer-events-none" />
             {/* Canto inferior direito */}
-            <div className="absolute -bottom-4 -right-4 w-4 h-4 border-l border-t border-slate-600 pointer-events-none" />
+            <div className="absolute -bottom-4 -right-4 w-4 h-4 border-l-2 border-t-2 border-black pointer-events-none" />
           </>
         )}
 
         {/* As 5 etiquetas lado a lado */}
-        <div className="flex flex-row border border-slate-300 shadow-xs">
+        <div className="flex flex-row border-2 border-black shadow-xs bg-white">
           {slots.map((item, idx) => {
             if (item) {
               return (
@@ -78,7 +78,7 @@ export const SheetPreview: React.FC<SheetPreviewProps> = ({
                   />
                   {/* Linha guia de corte pontilhada vertical entre etiquetas */}
                   {config.mostrarMarcasCorte && idx < 4 && (
-                    <div className="absolute top-0 right-0 w-[1px] h-full border-r border-dashed border-slate-400 pointer-events-none z-10" />
+                    <div className="absolute top-0 right-0 w-[1px] h-full border-r border-dashed border-slate-500 pointer-events-none z-10" />
                   )}
                 </div>
               );
