@@ -44,7 +44,7 @@ export async function generatePdfFromSheets(
 
     // Renderizar o elemento com html2canvas em alta resolução
     const canvas = await html2canvas(sheetEl, {
-      scale: 2, // 2x de densidade de pixels para alta nitidez e performance estável
+      scale: 2, // 2x de densidade para ótima nitidez
       useCORS: true,
       allowTaint: true,
       logging: false,
@@ -59,23 +59,11 @@ export async function generatePdfFromSheets(
     pdf.addImage(imgData, 'JPEG', 0, 0, 297, 210, undefined, 'FAST');
   }
 
-  // Baixar o arquivo PDF utilizando Blob explícito (garante extensão .pdf válida e sem corrupção de DataURI)
+  // Nome do arquivo sempre com extensão .pdf garantida
   const filename = `etiquetas-lombada-faina-${new Date().toISOString().slice(0, 10)}.pdf`;
-  const pdfBlob = pdf.output('blob');
-  const blobUrl = URL.createObjectURL(pdfBlob);
 
-  const link = document.createElement('a');
-  link.href = blobUrl;
-  link.setAttribute('download', filename);
-  link.style.display = 'none';
-  document.body.appendChild(link);
-  link.click();
-
-  // Limpeza do Blob da memória após o download
-  setTimeout(() => {
-    document.body.removeChild(link);
-    URL.revokeObjectURL(blobUrl);
-  }, 3000);
+  // Utilizar o método nativo oficial do jsPDF que força o nome e extensão .pdf no navegador
+  pdf.save(filename);
 }
 
 export function triggerBrowserPrint(): void {
