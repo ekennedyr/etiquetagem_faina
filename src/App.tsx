@@ -1,0 +1,294 @@
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import type { ArchiveItem, BatchConfig } from './types/archive';
+import {
+  loadStoredItems,
+  saveStoredItems,
+  loadStoredConfig,
+  saveStoredConfig,
+  SAMPLE_ITEMS,
+  DEFAULT_BATCH_CONFIG,
+} from './utils/storage';
+import { processArchiveItems } from './utils/volumeCalculator';
+import { triggerBrowserPrint, generatePdfFromSheets } from './utils/pdfGenerator';
+import { Header } from './components/Header';
+import { ConfigBar } from './components/ConfigBar';
+import { SpreadsheetGrid } from './components/SpreadsheetGrid';
+import { PreviewView } from './components/PreviewView';
+import { PrintContainer } from './components/PrintContainer';
+import { ImportExportModal } from './components/ImportExportModal';
+
+export const App: React.FC = () => {
+  const [rawItems, setRawItems] = useState<ArchiveItem[]>(loadStoredItems);
+  const [config, setConfig] = useState<BatchConfig>(loadStoredConfig);
+  const [activeTab, setActiveTab] = useState<'spreadsheet' | 'preview'>('spreadsheet');
+  const [isImportExportOpen, setIsImportExportOpen] = useState<boolean>(false);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
+  const [pdfProgress, setPdfProgress] = useState<{ current: number; total: number } | null>(null);
+
+  const printRootRef = useRef<HTMLDivElement>(null);
+
+  // Recalcular volumes e sequenciais automaticamente sempre que a lista ou configuração mudar
+  const processedItems = useMemo(() => {
+    return processArchiveItems(rawItems, config);
+  }, [rawItems, config]);
+
+  // Persistência automática no localStorage
+  useEffect(() => {
+    saveStoredItems(rawItems);
+  }, [rawItems]);
+
+  useEffect(() => {
+    saveStoredConfig(config);
+  }, [config]);
+
+  // Atualizar configurações do lote
+  const handleConfigChange = (updates: Partial<BatchConfig>) => {
+    setConfig((prev) => ({ ...prev, ...updates }));
+  };
+
+  // Alterar um item na planilha
+  const handleChangeItem = (id: string, updates: Partial<ArchiveItem>) => {
+    setRawItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
+    );
+  };
+
+  // Adicionar novo item
+  const handleAddItem = () => {
+    const newItem: ArchiveItem = {
+      id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      categoria: 'licitacao',
+      modalidade: 'Pregão Eletrônico',
+      numeroProcesso: '',
+      ano: new Date().getFullYear().toString(),
+      fundoMunicipal: 'Prefeitura Municipal / Gabinete',
+      objeto: '',
+      volumeInformado: 'Vol. 1',
+    };
+    setRawItems((prev) => [...prev, newItem]);
+  };
+
+  // Duplicar item existente
+  const handleDuplicateItem = (index: number) => {
+    const itemToClone = rawItems[index];
+    if (!itemToClone) return;
+
+    const cloned: ArchiveItem = {
+      ...itemToClone,
+      id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      volumeInformado: itemToClone.volumeInformado
+        ? `Vol. ${(parseInt(itemToClone.volumeInformado.replace(/\D/g, '')) || 1) + 1}`
+        : '',
+    };
+
+    setRawItems((prev) => [
+      ...prev.slice(0, index + 1),
+      cloned,
+      ...prev.slice(index + 1),
+    ]);
+  };
+
+  // Inserir nova linha logo abaixo da atual
+  const handleInsertBelow = (index: number) => {
+    const current = rawItems[index];
+    const newItem: ArchiveItem = {
+      id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      categoria: current?.categoria || 'licitacao',
+      modalidade: current?.modalidade || 'Pregão Eletrônico',
+      fundoMunicipal: current?.fundoMunicipal || 'Prefeitura Municipal / Gabinete',
+      numeroProcesso: current?.numeroProcesso || '',
+      ano: current?.ano || new Date().getFullYear().toString(),
+      objeto: '',
+      volumeInformado: '',
+    };
+
+    setRawItems((prev) => [
+      ...prev.slice(0, index + 1),
+      newItem,
+      ...prev.slice(index + 1),
+    ]);
+  };
+
+  // Excluir item
+  const handleDeleteItem = (id: string) => {
+    if (rawItems.length <= 1) return;
+    setRawItems((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  // Mover item para cima ou para baixo
+  const handleMoveItem = (index: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= rawItems.length) return;
+
+    const newItems = [...rawItems];
+    const [moved] = newItems.splice(index, 1);
+    newItems.splice(targetIndex, 0, moved);
+    setRawItems(newItems);
+  };
+
+  // Carregar dados de amostra
+  const handleLoadSamples = () => {
+    setRawItems(SAMPLE_ITEMS);
+    setConfig(DEFAULT_BATCH_CONFIG);
+  };
+
+  // Limpar tudo e recomeçar
+  const handleClearAll = () => {
+    if (window.confirm('Deseja realmente limpar todas as etiquetas cadastradas?')) {
+      const initialItem: ArchiveItem = {
+        id: `item-${Date.now()}`,
+        categoria: 'licitacao',
+        modalidade: 'Pregão Eletrônico',
+        numeroProcesso: '',
+        ano: new Date().getFullYear().toString(),
+        fundoMunicipal: '',
+        objeto: '',
+      };
+      setRawItems([initialItem]);
+    }
+  };
+
+  // Importar dados via modal
+  const handleImportData = (items: ArchiveItem[], newConfig?: Partial<BatchConfig>) => {
+    setRawItems(items);
+    if (newConfig) {
+      setConfig((prev) => ({ ...prev, ...newConfig }));
+    }
+  };
+
+  // Impressão nativa do navegador em tamanho real 100%
+  const handlePrint = () => {
+    triggerBrowserPrint();
+  };
+
+  // Geração direta de PDF com jsPDF
+  const handleGeneratePdf = async () => {
+    if (isGeneratingPdf || !printRootRef.current) return;
+
+    try {
+      setIsGeneratingPdf(true);
+      setPdfProgress({ current: 1, total: 1 });
+
+      // Obter os elementos de folha dentro do PrintContainer
+      const sheetElements = Array.from(
+        printRootRef.current.querySelectorAll<HTMLElement>('.sheet-container')
+      );
+
+      if (sheetElements.length === 0) {
+        alert('Nenhuma folha encontrada para gerar PDF.');
+        return;
+      }
+
+      await generatePdfFromSheets(sheetElements, (current, total) => {
+        setPdfProgress({ current, total });
+      });
+    } catch (err) {
+      console.error('Erro ao gerar PDF:', err);
+      alert('Ocorreu um erro ao gerar o PDF. Você também pode utilizar a opção "Imprimir em Tamanho Real" e salvar como PDF pelo navegador.');
+    } finally {
+      setIsGeneratingPdf(false);
+      setPdfProgress(null);
+    }
+  };
+
+  const totalPages = Math.max(1, Math.ceil(processedItems.length / 5));
+
+  return (
+    <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
+      {/* Cabeçalho Superior */}
+      <Header
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        onPrint={handlePrint}
+        onGeneratePdf={handleGeneratePdf}
+        isGeneratingPdf={isGeneratingPdf}
+        pdfProgress={pdfProgress}
+        config={config}
+        totalItems={processedItems.length}
+      />
+
+      {/* Barra de Configurações Globais */}
+      <ConfigBar
+        config={config}
+        onChangeConfig={handleConfigChange}
+        onAddItem={handleAddItem}
+        onLoadSamples={handleLoadSamples}
+        onClearAll={handleClearAll}
+        onOpenImportExport={() => setIsImportExportOpen(true)}
+        totalItems={processedItems.length}
+        totalPages={totalPages}
+      />
+
+      {/* Área Principal de Conteúdo */}
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 flex flex-col">
+        {activeTab === 'spreadsheet' ? (
+          <SpreadsheetGrid
+            items={processedItems}
+            onChangeItem={handleChangeItem}
+            onDeleteItem={handleDeleteItem}
+            onDuplicateItem={handleDuplicateItem}
+            onInsertBelow={handleInsertBelow}
+            onMoveItem={handleMoveItem}
+          />
+        ) : (
+          <PreviewView
+            items={processedItems}
+            config={config}
+            onPrint={handlePrint}
+            onGeneratePdf={handleGeneratePdf}
+          />
+        )}
+      </main>
+
+      {/* Rodapé Informativo da Aplicação */}
+      <footer className="bg-white border-t border-slate-200 py-3 px-4 text-center text-xs text-slate-500 print:hidden select-none">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
+          <span>
+            Prefeitura Municipal de Faina • Controladoria-Geral do Município (CGM)
+          </span>
+          <span className="font-mono text-slate-400">
+            Formato: 5 etiquetas (50x155mm) por Folha A4 Paisagem (297x210mm)
+          </span>
+        </div>
+      </footer>
+
+      {/* Container Exclusivo de Impressão e Captura de PDF */}
+      <div className="hidden">
+        {/* Renderiza sempre para permitir captura com html2canvas e print */}
+        <div
+          style={{
+            position: 'absolute',
+            left: '-9999px',
+            top: '0px',
+            width: '297mm',
+          }}
+        >
+          <div ref={printRootRef}>
+            {Array.from({ length: totalPages }, (_, i) => (
+              <div key={`capture-sheet-${i}`} className="mb-4">
+                <PrintContainer
+                  items={processedItems.slice(i * 5, (i + 1) * 5)}
+                  config={config}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Container Direto para window.print() */}
+      <PrintContainer items={processedItems} config={config} />
+
+      {/* Modal de Importar / Exportar JSON */}
+      <ImportExportModal
+        isOpen={isImportExportOpen}
+        onClose={() => setIsImportExportOpen(false)}
+        items={rawItems}
+        config={config}
+        onImportData={handleImportData}
+      />
+    </div>
+  );
+};
+
+export default App;
