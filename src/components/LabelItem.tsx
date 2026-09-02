@@ -1,5 +1,6 @@
 import React from 'react';
 import type { ArchiveItem, BatchConfig } from '../types/archive';
+import { formatMesNumeral } from '../utils/formatters';
 
 interface LabelItemProps {
   item: ArchiveItem;
@@ -39,7 +40,7 @@ export const LabelItem: React.FC<LabelItemProps> = ({
   const isMediumObjeto = objetoLen > 45 && !isLongObjeto;
   const isShortObjeto = hasObjeto && !isLongObjeto && !isMediumObjeto;
   const hasFundo = Boolean(item.fundoMunicipal?.trim());
-  const hasModalidade = Boolean(item.modalidade?.trim());
+  const hasModalidade = item.categoria === 'licitacao' && Boolean(item.modalidade?.trim());
 
   // Tipografia dinâmica do Objeto
   const getObjetoStyle = () => {
@@ -121,8 +122,8 @@ export const LabelItem: React.FC<LabelItemProps> = ({
             {getTituloPrincipal()}
           </h1>
 
-          {/* Modalidade / Tipo */}
-          {item.modalidade && (
+          {/* Modalidade / Tipo (Apenas para Processos Licitatórios) */}
+          {item.categoria === 'licitacao' && item.modalidade && (
             <div
               className={`mt-1 font-black uppercase text-black border border-black rounded inline-block ${
                 !hasObjeto
@@ -170,11 +171,11 @@ export const LabelItem: React.FC<LabelItemProps> = ({
                     MÊS
                   </span>
                   <span
-                    className={`font-black text-black block leading-tight ${
-                      !hasObjeto ? 'text-[14pt]' : 'text-[10pt]'
+                    className={`font-mono font-black text-black block leading-tight ${
+                      !hasObjeto ? 'text-[17pt]' : 'text-[12pt]'
                     }`}
                   >
-                    {item.mes || '—'}
+                    {formatMesNumeral(item.mes)}
                   </span>
                 </div>
                 <div className="pl-1">

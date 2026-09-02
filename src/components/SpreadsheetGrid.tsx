@@ -7,8 +7,8 @@ import {
   CATEGORIA_LABELS,
   FUNDOS_PADRAO,
   MODALIDADES_LICITACAO,
-  MESES,
 } from '../types/archive';
+import { formatMesNumeral } from '../utils/formatters';
 import {
   Copy,
   Plus,
@@ -16,6 +16,21 @@ import {
   ArrowUp,
   ArrowDown,
 } from 'lucide-react';
+
+const OPCOES_MESES_NUMERAIS = [
+  { val: '01', label: '01 (Jan)' },
+  { val: '02', label: '02 (Fev)' },
+  { val: '03', label: '03 (Mar)' },
+  { val: '04', label: '04 (Abr)' },
+  { val: '05', label: '05 (Mai)' },
+  { val: '06', label: '06 (Jun)' },
+  { val: '07', label: '07 (Jul)' },
+  { val: '08', label: '08 (Ago)' },
+  { val: '09', label: '09 (Set)' },
+  { val: '10', label: '10 (Out)' },
+  { val: '11', label: '11 (Nov)' },
+  { val: '12', label: '12 (Dez)' },
+];
 
 interface SpreadsheetGridProps {
   items: ArchiveItem[];
@@ -91,6 +106,8 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
                           updates.modalidade = 'Pregão Eletrônico';
                         } else if (newCat === 'dispensa' && !item.subtipoDispensa) {
                           updates.subtipoDispensa = 'DISPENSA DE LICITAÇÃO';
+                        } else if (newCat === 'balancete') {
+                          updates.modalidade = undefined;
                         }
                         onChangeItem(item.id, updates);
                       }}
@@ -195,16 +212,16 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
                     <div className="flex items-center gap-1">
                       {item.categoria === 'balancete' && (
                         <select
-                          value={item.mes || ''}
+                          value={formatMesNumeral(item.mes) === '—' ? '' : formatMesNumeral(item.mes)}
                           onChange={(e) =>
                             onChangeItem(item.id, { mes: e.target.value })
                           }
-                          className="w-1/2 bg-white border border-slate-300 rounded px-1 py-1 text-xs text-slate-800 focus:ring-1 focus:ring-blue-500 outline-none"
+                          className="w-1/2 bg-white border border-slate-300 rounded px-1 py-1 text-xs font-mono font-bold text-slate-800 focus:ring-1 focus:ring-blue-500 outline-none"
                         >
                           <option value="">Mês</option>
-                          {MESES.map((mes) => (
-                            <option key={mes} value={mes}>
-                              {mes}
+                          {OPCOES_MESES_NUMERAIS.map((m) => (
+                            <option key={m.val} value={m.val}>
+                              {m.label}
                             </option>
                           ))}
                         </select>

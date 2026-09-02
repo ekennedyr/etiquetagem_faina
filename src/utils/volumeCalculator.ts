@@ -1,4 +1,5 @@
 import type { ArchiveItem, BatchConfig } from '../types/archive';
+import { formatMesNumeral } from './formatters';
 
 function normalize(val?: string): string {
   return (val || '').trim().toLowerCase();
@@ -17,9 +18,9 @@ export function getGroupingKey(item: ArchiveItem): string {
     }
     case 'balancete': {
       const fundo = normalize(item.fundoMunicipal);
-      const mes = normalize(item.mes);
+      const mes = formatMesNumeral(item.mes);
       const ano = normalize(item.ano);
-      if (!fundo && !mes && !ano) return `single_${item.id}`;
+      if (!fundo && mes === '—' && !ano) return `single_${item.id}`;
       return `bal_${fundo}_${mes}_${ano}`;
     }
     case 'dispensa': {
