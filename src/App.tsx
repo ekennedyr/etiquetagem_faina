@@ -15,6 +15,7 @@ import { ConfigBar } from './components/ConfigBar';
 import { SpreadsheetGrid } from './components/SpreadsheetGrid';
 import { PreviewView } from './components/PreviewView';
 import { PrintContainer } from './components/PrintContainer';
+import { SheetPreview } from './components/SheetPreview';
 import { ImportExportModal } from './components/ImportExportModal';
 
 export const App: React.FC = () => {
@@ -169,7 +170,10 @@ export const App: React.FC = () => {
       setIsGeneratingPdf(true);
       setPdfProgress({ current: 1, total: 1 });
 
-      // Obter os elementos de folha dentro do PrintContainer
+      // Permitir breve espera para garantir layout estabilizado no DOM
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      // Obter os elementos de folha dentro do container dedicado
       const sheetElements = Array.from(
         printRootRef.current.querySelectorAll<HTMLElement>('.sheet-container')
       );
@@ -252,27 +256,28 @@ export const App: React.FC = () => {
         </div>
       </footer>
 
-      {/* Container Exclusivo de Impressão e Captura de PDF */}
-      <div className="hidden">
-        {/* Renderiza sempre para permitir captura com html2canvas e print */}
-        <div
-          style={{
-            position: 'absolute',
-            left: '-9999px',
-            top: '0px',
-            width: '297mm',
-          }}
-        >
-          <div ref={printRootRef}>
-            {Array.from({ length: totalPages }, (_, i) => (
-              <div key={`capture-sheet-${i}`} className="mb-4">
-                <PrintContainer
-                  items={processedItems.slice(i * 5, (i + 1) * 5)}
-                  config={config}
-                />
-              </div>
-            ))}
-          </div>
+      {/* Container Oculto fora da tela para Captura precisa do PDF (Sem display: none para permitir cálculo milimétrico) */}
+      <div
+        style={{
+          position: 'fixed',
+          left: '-99999px',
+          top: '0px',
+          width: '297mm',
+          opacity: 1,
+          zIndex: -9999,
+          pointerEvents: 'none',
+        }}
+      >
+        <div ref={printRootRef}>
+          {Array.from({ length: totalPages }, (_, i) => (
+            <div key={`capture-sheet-${i}`} className="mb-4 bg-white" style={{ width: '297mm', height: '210mm' }}>
+              <SheetPreview
+                items={processedItems}
+                config={config}
+                sheetIndex={i}
+              />
+            </div>
+          ))}
         </div>
       </div>
 
