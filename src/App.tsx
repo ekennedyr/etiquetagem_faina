@@ -14,19 +14,78 @@ import { Header } from './components/Header';
 import { ConfigBar } from './components/ConfigBar';
 import { SpreadsheetGrid } from './components/SpreadsheetGrid';
 import { PreviewView } from './components/PreviewView';
+import { MobileFormView } from './components/MobileFormView';
 import { PrintContainer } from './components/PrintContainer';
 import { SheetPreview } from './components/SheetPreview';
 import { ImportExportModal } from './components/ImportExportModal';
 
+function detectInitialTab(): 'spreadsheet' | 'preview' | 'mobile' {
+  if (typeof window === 'undefined') return 'spreadsheet';
+  const path = window.location.pathname.toLowerCase();
+  const hash = window.location.hash.toLowerCase();
+  const search = window.location.search.toLowerCase();
+
+  if (
+    path.includes('formulario') ||
+    path.includes('mobile') ||
+    path.includes('coleta') ||
+    path.includes('form') ||
+    hash.includes('formulario') ||
+    hash.includes('mobile') ||
+    hash.includes('coleta') ||
+    hash.includes('form') ||
+    search.includes('view=mobile') ||
+    search.includes('view=formulario')
+  ) {
+    return 'mobile';
+  }
+
+  if (path.includes('preview') || hash.includes('preview')) {
+    return 'preview';
+  }
+
+  return 'spreadsheet';
+}
+
 export const App: React.FC = () => {
   const [rawItems, setRawItems] = useState<ArchiveItem[]>(loadStoredItems);
   const [config, setConfig] = useState<BatchConfig>(loadStoredConfig);
-  const [activeTab, setActiveTab] = useState<'spreadsheet' | 'preview'>('spreadsheet');
+  const [activeTab, setActiveTab] = useState<'spreadsheet' | 'preview' | 'mobile'>(detectInitialTab);
   const [isImportExportOpen, setIsImportExportOpen] = useState<boolean>(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
   const [pdfProgress, setPdfProgress] = useState<{ current: number; total: number } | null>(null);
 
   const printRootRef = useRef<HTMLDivElement>(null);
+
+  // Escuta alterações na URL (ex: botão voltar/avançar do navegador e hashchange)
+  useEffect(() => {
+    const handleUrlChange = () => {
+      setActiveTab(detectInitialTab());
+    };
+
+    window.addEventListener('hashchange', handleUrlChange);
+    window.addEventListener('popstate', handleUrlChange);
+    return () => {
+      window.removeEventListener('hashchange', handleUrlChange);
+      window.removeEventListener('popstate', handleUrlChange);
+    };
+  }, []);
+
+  // Sincronizar hash com activeTab
+  const handleTabChange = (tab: 'spreadsheet' | 'preview' | 'mobile') => {
+    setActiveTab(tab);
+    try {
+      if (tab === 'mobile') {
+        window.history.replaceState(null, '', '#/formulario');
+      } else if (tab === 'preview') {
+        window.history.replaceState(null, '', '#/preview');
+      } else {
+        window.history.replaceState(null, '', '#/');
+      }
+    } catch {
+      // Ignorar erros em ambientes restritos
+    }
+  };
 
   // Recalcular volumes e sequenciais automaticamente sempre que a lista ou configuração mudar
   const processedItems = useMemo(() => {
@@ -41,6 +100,11 @@ export const App: React.FC = () => {
   useEffect(() => {
     saveStoredConfig(config);
   }, [config]);
+
+  // Adicionar item direto do formulário mobile
+  const handleAddMobileItem = (newItem: ArchiveItem) => {
+    setRawItems((prev) => [...prev, newItem]);
+  };
 
   // Atualizar configurações do lote
   const handleConfigChange = (updates: Partial<BatchConfig>) => {
@@ -197,12 +261,26 @@ export const App: React.FC = () => {
 
   const totalPages = Math.max(1, Math.ceil(processedItems.length / 5));
 
+  // Se a aba ativa for mobile, renderiza a visão de formulário mobile-first
+  if (activeTab === 'mobile') {
+    return (
+      <MobileFormView
+        items={rawItems}
+        config={config}
+        onAddItem={handleAddMobileItem}
+        onDeleteItem={handleDeleteItem}
+        onGoToSpreadsheet={() => handleTabChange('spreadsheet')}
+        onGoToPreview={() => handleTabChange('preview')}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
       {/* Cabeçalho Superior */}
       <Header
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={handleTabChange}
         onPrint={handlePrint}
         onGeneratePdf={handleGeneratePdf}
         isGeneratingPdf={isGeneratingPdf}

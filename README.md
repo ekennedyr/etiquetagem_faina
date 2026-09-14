@@ -67,6 +67,16 @@ Permite cadastro e edição rápida de dados em formato de planilha de alta prod
   - Ações rápidas por linha: Duplicar linha, Inserir nova linha abaixo, Mover para cima/baixo, Excluir.
   - Configuração global da Sigla do Lote e Sequencial Inicial.
   - Upload e personalização de Logotipo com botão de restauração do padrão oficial.
+- **Coleta Rápida Mobile-First (Smartphone)**:
+  - Desenvolvido especialmente para inserção ágil diretamente no arquivo físico via celular sem precisar de computador.
+  - Campos simplificados e intuitivos:
+    - **Modalidade**: Lista suspensa em maiúsculas (`PREGÃO ELETRÔNICO`, `PREGÃO PRESENCIAL`, `CONCORRÊNCIA`, `DIÁLOGO COMPETITIVO`, `CONCURSO`, `LEILÃO`, `CREDENCIAMENTO`, `REGISTRO/TOMADA DE PREÇOS`, `CONVITE`).
+    - **Nº Processo**: Aceita apenas dígitos numéricos (até 2 dígitos).
+    - **Ano**: Seleção rápida entre `2021`, `2022`, `2023` e `2024`.
+    - **Objeto**: Descrição simplificada do processo.
+    - **Volume**: Opcional (apenas números até 2 dígitos).
+  - Botão **"PRÓXIMO"**: Salva instantaneamente na base de dados, exibe confirmação e limpa os campos focando no próximo registro.
+  - Acesso direto pela URL: `https://etiquetas.faina.go.gov.br/formulario` (ou `/#/formulario`).
 - **Pré-visualização A4 em Tempo Real**:
   - Exibição fidedigna de cada folha A4 com as 5 etiquetas diagramadas.
   - Controles de zoom (50%, 75%, 100% Tamanho Real, etc.) e navegação folha a folha ou visão geral de todas as folhas.

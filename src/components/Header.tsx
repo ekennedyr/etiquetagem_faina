@@ -10,8 +10,8 @@ import {
 } from 'lucide-react';
 
 interface HeaderProps {
-  activeTab: 'spreadsheet' | 'preview';
-  setActiveTab: (tab: 'spreadsheet' | 'preview') => void;
+  activeTab: 'spreadsheet' | 'preview' | 'mobile';
+  setActiveTab: (tab: 'spreadsheet' | 'preview' | 'mobile') => void;
   onPrint: () => void;
   onGeneratePdf: () => void;
   isGeneratingPdf: boolean;
@@ -61,7 +61,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Alternância de Abas: Planilha vs Pré-visualização */}
+        {/* Alternância de Abas: Planilha vs Pré-visualização vs Formulário Mobile */}
         <div className="flex items-center bg-slate-800/80 p-1 rounded-xl border border-slate-700">
           <button
             type="button"
@@ -73,7 +73,7 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <Table className="w-4 h-4" />
-            <span>Planilha de Dados</span>
+            <span>Planilha</span>
             <span className="bg-slate-900/60 text-slate-300 px-1.5 py-0.2 rounded text-[10px]">
               {totalItems}
             </span>
@@ -89,7 +89,20 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <Eye className="w-4 h-4" />
-            <span>Pré-visualização A4</span>
+            <span>Pré-visualização</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('mobile')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              activeTab === 'mobile'
+                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-sm'
+                : 'text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/40'
+            }`}
+          >
+            <span className="text-sm">📱</span>
+            <span>Formulário Mobile</span>
           </button>
         </div>
 
