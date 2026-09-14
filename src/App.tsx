@@ -19,6 +19,8 @@ import { PrintContainer } from './components/PrintContainer';
 import { SheetPreview } from './components/SheetPreview';
 import { ImportExportModal } from './components/ImportExportModal';
 
+import { syncManager } from './utils/apiSync';
+
 function detectInitialTab(): 'spreadsheet' | 'preview' | 'mobile' {
   if (typeof window === 'undefined') return 'spreadsheet';
   const path = window.location.pathname.toLowerCase();
@@ -54,8 +56,35 @@ export const App: React.FC = () => {
   const [isImportExportOpen, setIsImportExportOpen] = useState<boolean>(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
   const [pdfProgress, setPdfProgress] = useState<{ current: number; total: number } | null>(null);
+  const [syncStatus, setSyncStatus] = useState<'connected' | 'connecting' | 'offline'>('connecting');
 
   const printRootRef = useRef<HTMLDivElement>(null);
+
+  // Sincronização em Tempo Real (SSE + Polling de fallback)
+  useEffect(() => {
+    // 1. Escuta eventos em tempo real vindos do servidor (SSE)
+    const unsubSync = syncManager.onSync((data) => {
+      if (data.items && Array.isArray(data.items)) {
+        setRawItems(data.items);
+      }
+      if (data.config) {
+        setConfig((prev) => ({ ...prev, ...data.config }));
+      }
+    });
+
+    // 2. Escuta mudanças no status da conexão
+    const unsubStatus = syncManager.onStatusChange((status) => {
+      setSyncStatus(status);
+    });
+
+    // 3. Busca os dados mais recentes na inicialização
+    syncManager.fetchLatest();
+
+    return () => {
+      unsubSync();
+      unsubStatus();
+    };
+  }, []);
 
   // Escuta alterações na URL (ex: botão voltar/avançar do navegador e hashchange)
   useEffect(() => {
@@ -101,21 +130,25 @@ export const App: React.FC = () => {
     saveStoredConfig(config);
   }, [config]);
 
-  // Adicionar item direto do formulário mobile
+  // Adicionar item direto do formulário mobile com broadcast em tempo real
   const handleAddMobileItem = (newItem: ArchiveItem) => {
     setRawItems((prev) => [...prev, newItem]);
+    // Envia para o servidor para que o computador atualize imediatamente
+    syncManager.addItem(newItem);
   };
 
   // Atualizar configurações do lote
   const handleConfigChange = (updates: Partial<BatchConfig>) => {
-    setConfig((prev) => ({ ...prev, ...updates }));
+    const newConfig = { ...config, ...updates };
+    setConfig(newConfig);
+    syncManager.syncAll(rawItems, newConfig);
   };
 
   // Alterar um item na planilha
   const handleChangeItem = (id: string, updates: Partial<ArchiveItem>) => {
-    setRawItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
-    );
+    const updated = rawItems.map((item) => (item.id === id ? { ...item, ...updates } : item));
+    setRawItems(updated);
+    syncManager.syncAll(updated, config);
   };
 
   // Adicionar novo item
@@ -123,14 +156,16 @@ export const App: React.FC = () => {
     const newItem: ArchiveItem = {
       id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       categoria: 'licitacao',
-      modalidade: 'Pregão Eletrônico',
+      modalidade: 'PREGÃO ELETRÔNICO',
       numeroProcesso: '',
       ano: new Date().getFullYear().toString(),
       fundoMunicipal: 'Prefeitura Municipal / Gabinete',
       objeto: '',
       volumeInformado: 'Vol. 1',
     };
-    setRawItems((prev) => [...prev, newItem]);
+    const updated = [...rawItems, newItem];
+    setRawItems(updated);
+    syncManager.syncAll(updated, config);
   };
 
   // Duplicar item existente
@@ -146,11 +181,13 @@ export const App: React.FC = () => {
         : '',
     };
 
-    setRawItems((prev) => [
-      ...prev.slice(0, index + 1),
+    const updated = [
+      ...rawItems.slice(0, index + 1),
       cloned,
-      ...prev.slice(index + 1),
-    ]);
+      ...rawItems.slice(index + 1),
+    ];
+    setRawItems(updated);
+    syncManager.syncAll(updated, config);
   };
 
   // Inserir nova linha logo abaixo da atual
@@ -159,7 +196,7 @@ export const App: React.FC = () => {
     const newItem: ArchiveItem = {
       id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       categoria: current?.categoria || 'licitacao',
-      modalidade: current?.modalidade || 'Pregão Eletrônico',
+      modalidade: current?.modalidade || 'PREGÃO ELETRÔNICO',
       fundoMunicipal: current?.fundoMunicipal || 'Prefeitura Municipal / Gabinete',
       numeroProcesso: current?.numeroProcesso || '',
       ano: current?.ano || new Date().getFullYear().toString(),
@@ -167,17 +204,21 @@ export const App: React.FC = () => {
       volumeInformado: '',
     };
 
-    setRawItems((prev) => [
-      ...prev.slice(0, index + 1),
+    const updated = [
+      ...rawItems.slice(0, index + 1),
       newItem,
-      ...prev.slice(index + 1),
-    ]);
+      ...rawItems.slice(index + 1),
+    ];
+    setRawItems(updated);
+    syncManager.syncAll(updated, config);
   };
 
   // Excluir item
   const handleDeleteItem = (id: string) => {
     if (rawItems.length <= 1) return;
-    setRawItems((prev) => prev.filter((item) => item.id !== id));
+    const updated = rawItems.filter((item) => item.id !== id);
+    setRawItems(updated);
+    syncManager.syncAll(updated, config);
   };
 
   // Mover item para cima ou para baixo
@@ -189,12 +230,14 @@ export const App: React.FC = () => {
     const [moved] = newItems.splice(index, 1);
     newItems.splice(targetIndex, 0, moved);
     setRawItems(newItems);
+    syncManager.syncAll(newItems, config);
   };
 
   // Carregar dados de amostra
   const handleLoadSamples = () => {
     setRawItems(SAMPLE_ITEMS);
     setConfig(DEFAULT_BATCH_CONFIG);
+    syncManager.syncAll(SAMPLE_ITEMS, DEFAULT_BATCH_CONFIG);
   };
 
   // Limpar tudo e recomeçar
@@ -203,22 +246,25 @@ export const App: React.FC = () => {
       const initialItem: ArchiveItem = {
         id: `item-${Date.now()}`,
         categoria: 'licitacao',
-        modalidade: 'Pregão Eletrônico',
+        modalidade: 'PREGÃO ELETRÔNICO',
         numeroProcesso: '',
         ano: new Date().getFullYear().toString(),
         fundoMunicipal: '',
         objeto: '',
       };
       setRawItems([initialItem]);
+      syncManager.syncAll([initialItem], config);
     }
   };
 
   // Importar dados via modal
   const handleImportData = (items: ArchiveItem[], newConfig?: Partial<BatchConfig>) => {
     setRawItems(items);
+    const finalConfig = newConfig ? { ...config, ...newConfig } : config;
     if (newConfig) {
-      setConfig((prev) => ({ ...prev, ...newConfig }));
+      setConfig(finalConfig);
     }
+    syncManager.syncAll(items, finalConfig);
   };
 
   // Impressão nativa do navegador em tamanho real 100%
@@ -271,6 +317,7 @@ export const App: React.FC = () => {
         onDeleteItem={handleDeleteItem}
         onGoToSpreadsheet={() => handleTabChange('spreadsheet')}
         onGoToPreview={() => handleTabChange('preview')}
+        syncStatus={syncStatus}
       />
     );
   }
@@ -287,6 +334,7 @@ export const App: React.FC = () => {
         pdfProgress={pdfProgress}
         config={config}
         totalItems={processedItems.length}
+        syncStatus={syncStatus}
       />
 
       {/* Barra de Configurações Globais */}

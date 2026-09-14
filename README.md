@@ -67,15 +67,19 @@ Permite cadastro e edição rápida de dados em formato de planilha de alta prod
   - Ações rápidas por linha: Duplicar linha, Inserir nova linha abaixo, Mover para cima/baixo, Excluir.
   - Configuração global da Sigla do Lote e Sequencial Inicial.
   - Upload e personalização de Logotipo com botão de restauração do padrão oficial.
+- **Sincronização em Tempo Real (Celular ⇄ Computador)**:
+  - Backend integrado com **Server-Sent Events (SSE)** e persistência em banco JSON.
+  - Conforme o operador adiciona etiquetas no smartphone, a planilha aberta no computador do supervisor é **atualizada instantaneamente ao vivo**, sem necessidade de recarregar a página (`F5`).
+  - **Normalização Inteligente de Processos**: Desconsidera zeros à esquerda no número do processo (ex.: `5` e `05` são interpretados como o mesmo processo e agrupados juntos para o cálculo automático de volumes `Vol. 1 de 2`, `Vol. 2 de 2`).
 - **Coleta Rápida Mobile-First (Smartphone)**:
   - Desenvolvido especialmente para inserção ágil diretamente no arquivo físico via celular sem precisar de computador.
-  - Campos simplificados e intuitivos:
+  - Campos simplificados e livres (não obrigatórios):
     - **Modalidade**: Lista suspensa em maiúsculas (`PREGÃO ELETRÔNICO`, `PREGÃO PRESENCIAL`, `CONCORRÊNCIA`, `DIÁLOGO COMPETITIVO`, `CONCURSO`, `LEILÃO`, `CREDENCIAMENTO`, `REGISTRO/TOMADA DE PREÇOS`, `CONVITE`).
     - **Nº Processo**: Aceita apenas dígitos numéricos (até 2 dígitos).
     - **Ano**: Seleção rápida entre `2021`, `2022`, `2023` e `2024`.
     - **Objeto**: Descrição simplificada do processo.
     - **Volume**: Opcional (apenas números até 2 dígitos).
-  - Botão **"PRÓXIMO"**: Salva instantaneamente na base de dados, exibe confirmação e limpa os campos focando no próximo registro.
+  - Botão **"PRÓXIMO"**: Salva instantaneamente na base de dados, emite notificação para todos os computadores conectados e limpa os campos focando no próximo registro.
   - Acesso direto pela URL: `https://etiquetas.faina.go.gov.br/formulario` (ou `/#/formulario`).
 - **Pré-visualização A4 em Tempo Real**:
   - Exibição fidedigna de cada folha A4 com as 5 etiquetas diagramadas.

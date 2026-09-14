@@ -18,6 +18,7 @@ interface HeaderProps {
   pdfProgress: { current: number; total: number } | null;
   config: BatchConfig;
   totalItems: number;
+  syncStatus?: 'connected' | 'connecting' | 'offline';
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -29,6 +30,7 @@ export const Header: React.FC<HeaderProps> = ({
   pdfProgress,
   config,
   totalItems,
+  syncStatus = 'connected',
 }) => {
   return (
     <header className="bg-slate-900 text-white border-b border-slate-800 shadow-md print:hidden select-none">
@@ -54,6 +56,40 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-[10px] font-bold px-1.5 py-0.5 rounded">
                 CGM
               </span>
+              {/* Badge de sincronização em tempo real */}
+              <div
+                title={
+                  syncStatus === 'connected'
+                    ? 'Sincronizado em tempo real com celular e outros dispositivos'
+                    : syncStatus === 'connecting'
+                    ? 'Conectando ao servidor em tempo real...'
+                    : 'Modo Offline (Salvo localmente)'
+                }
+                className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border transition-all ${
+                  syncStatus === 'connected'
+                    ? 'bg-emerald-950/60 text-emerald-400 border-emerald-600/40'
+                    : syncStatus === 'connecting'
+                    ? 'bg-amber-950/60 text-amber-400 border-amber-600/40'
+                    : 'bg-slate-800 text-slate-400 border-slate-700'
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    syncStatus === 'connected'
+                      ? 'bg-emerald-400 animate-pulse'
+                      : syncStatus === 'connecting'
+                      ? 'bg-amber-400 animate-ping'
+                      : 'bg-slate-500'
+                  }`}
+                />
+                <span className="hidden sm:inline">
+                  {syncStatus === 'connected'
+                    ? 'Tempo Real'
+                    : syncStatus === 'connecting'
+                    ? 'Conectando...'
+                    : 'Offline'}
+                </span>
+              </div>
             </div>
             <p className="text-xs text-slate-400 font-medium">
               Etiquetagem de Lombadas para Pastas AZ • Padrão A4 Paisagem (50x155mm)

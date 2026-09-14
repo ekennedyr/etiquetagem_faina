@@ -34,6 +34,7 @@ interface MobileFormViewProps {
   onDeleteItem: (id: string) => void;
   onGoToSpreadsheet: () => void;
   onGoToPreview: () => void;
+  syncStatus?: 'connected' | 'connecting' | 'offline';
 }
 
 export const MobileFormView: React.FC<MobileFormViewProps> = ({
@@ -42,6 +43,7 @@ export const MobileFormView: React.FC<MobileFormViewProps> = ({
   onAddItem,
   onDeleteItem,
   onGoToSpreadsheet,
+  syncStatus = 'connected',
 }) => {
   // Estados dos campos (todos não obrigatórios)
   const [modalidade, setModalidade] = useState<string>(MODALIDADES_FORM[0]);
@@ -153,9 +155,37 @@ export const MobileFormView: React.FC<MobileFormViewProps> = ({
               <h1 className="text-xs sm:text-sm font-extrabold tracking-tight text-white leading-tight">
                 Controladoria-Geral do Município de Faina
               </h1>
-              <p className="text-[11px] font-semibold text-blue-400">
-                Aplicativo de Etiquetagem
-              </p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-[11px] font-semibold text-blue-400">
+                  Aplicativo de Etiquetagem
+                </span>
+                <span
+                  className={`inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.2 rounded-full border ${
+                    syncStatus === 'connected'
+                      ? 'bg-emerald-950/60 text-emerald-400 border-emerald-600/40'
+                      : syncStatus === 'connecting'
+                      ? 'bg-amber-950/60 text-amber-400 border-amber-600/40'
+                      : 'bg-slate-800 text-slate-400 border-slate-700'
+                  }`}
+                >
+                  <span
+                    className={`w-1 h-1 rounded-full ${
+                      syncStatus === 'connected'
+                        ? 'bg-emerald-400 animate-pulse'
+                        : syncStatus === 'connecting'
+                        ? 'bg-amber-400 animate-ping'
+                        : 'bg-slate-500'
+                    }`}
+                  />
+                  <span>
+                    {syncStatus === 'connected'
+                      ? 'Ao Vivo'
+                      : syncStatus === 'connecting'
+                      ? 'Conectando...'
+                      : 'Offline'}
+                  </span>
+                </span>
+              </div>
             </div>
           </div>
 

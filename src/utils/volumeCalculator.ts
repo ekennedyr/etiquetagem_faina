@@ -6,12 +6,23 @@ function normalize(val?: string): string {
 }
 
 /**
+ * Normaliza o número do processo desconsiderando zeros à esquerda (ex: "05" vira "5", "005" vira "5")
+ * para que processos digitados como 5 e 05 sejam agrupados na mesma contagem de volume.
+ */
+export function normalizeProcesso(val?: string): string {
+  if (!val) return '';
+  const clean = val.trim().toLowerCase();
+  // Remove zeros à esquerda de sequências numéricas (ex: "05" -> "5", "05/2023" -> "5/2023")
+  return clean.replace(/\b0+(\d+)\b/g, '$1');
+}
+
+/**
  * Calcula a chave de agrupamento de volumes com base na categoria e campos do item.
  */
 export function getGroupingKey(item: ArchiveItem): string {
   switch (item.categoria) {
     case 'licitacao': {
-      const num = normalize(item.numeroProcesso);
+      const num = normalizeProcesso(item.numeroProcesso);
       const ano = normalize(item.ano);
       if (!num && !ano) return `single_${item.id}`;
       return `lic_${num}_${ano}`;
@@ -25,7 +36,7 @@ export function getGroupingKey(item: ArchiveItem): string {
     }
     case 'dispensa': {
       const subtipo = normalize(item.subtipoDispensa || 'dispensa');
-      const num = normalize(item.numeroProcesso);
+      const num = normalizeProcesso(item.numeroProcesso);
       const ano = normalize(item.ano);
       if (!num && !ano) return `single_${item.id}`;
       return `disp_${subtipo}_${num}_${ano}`;
@@ -33,7 +44,7 @@ export function getGroupingKey(item: ArchiveItem): string {
     case 'outros': {
       const tit = normalize(item.tituloCustomizado);
       const ano = normalize(item.ano);
-      const num = normalize(item.numeroProcesso);
+      const num = normalizeProcesso(item.numeroProcesso);
       if (!tit && !ano && !num) return `single_${item.id}`;
       return `out_${tit}_${num}_${ano}`;
     }
