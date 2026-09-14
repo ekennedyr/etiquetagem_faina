@@ -134,6 +134,16 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = url.pathname;
 
+  // Endpoint de Saúde do Container: /api/health
+  if (pathname === '/api/health' && req.method === 'GET') {
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+    });
+    res.end(JSON.stringify({ status: 'ok', uptime: process.uptime(), count: db.items.length }));
+    return;
+  }
+
   // 1. Endpoint SSE: /api/events
   if (pathname === '/api/events' && req.method === 'GET') {
     res.writeHead(200, {
@@ -153,7 +163,11 @@ const server = http.createServer((req, res) => {
 
   // 2. Endpoint GET /api/data
   if (pathname === '/api/data' && req.method === 'GET') {
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      Pragma: 'no-cache',
+    });
     res.end(JSON.stringify(db));
     return;
   }
