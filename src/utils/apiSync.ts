@@ -10,15 +10,21 @@ export interface SyncPayload {
 type SyncCallback = (data: SyncPayload) => void;
 type StatusCallback = (status: 'connected' | 'connecting' | 'offline') => void;
 
+const CLOUD_SYNC_TOPIC = 'faina_cgm_etiquetas_realtime_v1';
+const CLOUD_SYNC_PUB_URL = `https://ntfy.sh/${CLOUD_SYNC_TOPIC}`;
+const CLOUD_SYNC_SSE_URL = `https://ntfy.sh/${CLOUD_SYNC_TOPIC}/sse`;
+const CLOUD_SYNC_POLL_URL = `https://ntfy.sh/${CLOUD_SYNC_TOPIC}/json?poll=1&since=12h`;
+
 class RealtimeSyncManager {
-  private eventSource: EventSource | null = null;
+  private localEventSource: EventSource | null = null;
+  private cloudEventSource: EventSource | null = null;
   private pollInterval: number | null = null;
+  private broadcastChannel: BroadcastChannel | null = null;
   private onSyncListeners: Set<SyncCallback> = new Set();
   private onStatusListeners: Set<StatusCallback> = new Set();
   private currentStatus: 'connected' | 'connecting' | 'offline' = 'connecting';
   private lastKnownTimestamp = 0;
-  private consecutiveErrors = 0;
-  private isSaving = false;
+  private isPublishing = false;
 
   constructor() {
     this.init();
@@ -27,13 +33,26 @@ class RealtimeSyncManager {
   private init() {
     if (typeof window === 'undefined') return;
 
-    // 1. Busca dados imediatamente ao iniciar
-    this.fetchLatest();
+    // 1. BroadcastChannel para sincronizar abas no mesmo navegador
+    try {
+      this.broadcastChannel = new BroadcastChannel('etiquetas_faina_sync');
+      this.broadcastChannel.onmessage = (event) => {
+        if (event.data && Array.isArray(event.data.items)) {
+          this.applyIncomingData(event.data);
+        }
+      };
+    } catch {
+      // Ignora se não suportado
+    }
 
-    // 2. Conecta SSE para atualizações em tempo real (milissegundos)
-    this.connectSSE();
+    // 2. Conecta canais de tempo real
+    this.connectLocalSSE();
+    this.connectCloudRealtime();
 
-    // 3. Polling ultrarrápido a cada 1.5s como garantia total (à prova de falhas de rede)
+    // 3. Busca dados mais recentes
+    this.fetchInitial();
+
+    // 4. Polling periódico de garantia a cada 2 segundos
     this.startPolling();
   }
 
@@ -44,165 +63,234 @@ class RealtimeSyncManager {
     }
   }
 
-  private connectSSE() {
+  private async fetchInitial() {
+    // Tenta primeiro no backend local
+    const localOk = await this.fetchLocalData();
+    if (!localOk) {
+      // Se o backend local for estático/Caddy, busca no canal cloud
+      await this.fetchCloudData();
+    }
+  }
+
+  private connectLocalSSE() {
     try {
-      if (this.eventSource) {
-        this.eventSource.close();
-      }
-
+      if (this.localEventSource) this.localEventSource.close();
       const es = new EventSource('/api/events');
-      this.eventSource = es;
-
-      es.onopen = () => {
-        this.consecutiveErrors = 0;
-        this.setStatus('connected');
-      };
+      this.localEventSource = es;
 
       es.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data);
           if (payload && Array.isArray(payload.items)) {
-            this.consecutiveErrors = 0;
+            this.applyIncomingData(payload);
             this.setStatus('connected');
-            if (payload.lastUpdated && payload.lastUpdated > this.lastKnownTimestamp) {
-              this.lastKnownTimestamp = payload.lastUpdated;
-              saveStoredItems(payload.items);
-              if (payload.config) saveStoredConfig(payload.config);
-              this.notifySync(payload);
-            }
           }
-        } catch (e) {
-          console.error('Erro ao ler evento SSE', e);
+        } catch {
+          // Ignora se for HTML (Caddy static)
         }
       };
 
       es.onerror = () => {
-        // Não marca offline imediatamente ao desconectar SSE, pois o polling HTTP continua mantendo online
         es.close();
-        this.eventSource = null;
-        // Tenta reconectar em 5 segundos
-        setTimeout(() => {
-          this.connectSSE();
-        }, 5000);
+        this.localEventSource = null;
       };
     } catch {
-      // Ignora erro no SSE, fallback HTTP cuidará da sincronização
+      // Ignora erro no SSE local
+    }
+  }
+
+  private connectCloudRealtime() {
+    try {
+      if (this.cloudEventSource) this.cloudEventSource.close();
+      const es = new EventSource(CLOUD_SYNC_SSE_URL);
+      this.cloudEventSource = es;
+
+      es.onopen = () => {
+        this.setStatus('connected');
+      };
+
+      es.onmessage = (event) => {
+        try {
+          const raw = JSON.parse(event.data);
+          if (raw && raw.event === 'message' && raw.message) {
+            const payload: SyncPayload = JSON.parse(raw.message);
+            if (payload && Array.isArray(payload.items)) {
+              this.applyIncomingData(payload);
+              this.setStatus('connected');
+            }
+          }
+        } catch {
+          // Ignora mensagens de controle
+        }
+      };
+
+      es.onerror = () => {
+        es.close();
+        this.cloudEventSource = null;
+        setTimeout(() => this.connectCloudRealtime(), 4000);
+      };
+    } catch {
+      // Ignora
     }
   }
 
   private startPolling() {
     if (this.pollInterval) clearInterval(this.pollInterval);
-    // Polling a cada 1.5 segundos
-    this.pollInterval = window.setInterval(() => {
-      this.fetchLatest();
-    }, 1500);
+    this.pollInterval = window.setInterval(async () => {
+      const localOk = await this.fetchLocalData();
+      if (!localOk) {
+        await this.fetchCloudData();
+      }
+    }, 2000);
   }
 
-  public async fetchLatest(): Promise<SyncPayload | null> {
+  private async fetchLocalData(): Promise<boolean> {
     try {
       const res = await fetch(`/api/data?_t=${Date.now()}`, {
         cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache',
-          Pragma: 'no-cache',
-        },
+        headers: { 'Cache-Control': 'no-cache' },
       });
 
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      // Só processa se o servidor realmente retornou JSON (e não a página HTML do Caddy)
+      if (res.ok && contentType.includes('application/json')) {
         const data: SyncPayload = await res.json();
         if (data && Array.isArray(data.items)) {
-          this.consecutiveErrors = 0;
+          this.applyIncomingData(data);
           this.setStatus('connected');
-
-          if (!this.lastKnownTimestamp || (data.lastUpdated && data.lastUpdated > this.lastKnownTimestamp)) {
-            this.lastKnownTimestamp = data.lastUpdated || Date.now();
-            saveStoredItems(data.items);
-            if (data.config) saveStoredConfig(data.config);
-            this.notifySync(data);
-          }
-          return data;
+          return true;
         }
-      } else {
-        this.handleFetchError();
       }
     } catch {
-      this.handleFetchError();
+      // Fallback para cloud
     }
-    return null;
+    return false;
   }
 
-  private handleFetchError() {
-    this.consecutiveErrors++;
-    // Se falhar 3 vezes seguidas no HTTP (após ~4.5 segundos), marca offline
-    if (this.consecutiveErrors >= 3) {
+  private async fetchCloudData(): Promise<boolean> {
+    try {
+      const res = await fetch(`${CLOUD_SYNC_POLL_URL}&_t=${Date.now()}`, {
+        cache: 'no-store',
+      });
+      if (res.ok) {
+        const text = await res.text();
+        const lines = text.trim().split('\n');
+        // Lê a última mensagem válida publicada no canal
+        for (let i = lines.length - 1; i >= 0; i--) {
+          try {
+            const raw = JSON.parse(lines[i]);
+            if (raw && raw.message) {
+              const payload: SyncPayload = JSON.parse(raw.message);
+              if (payload && Array.isArray(payload.items)) {
+                this.applyIncomingData(payload);
+                this.setStatus('connected');
+                return true;
+              }
+            }
+          } catch {
+            continue;
+          }
+        }
+        this.setStatus('connected');
+      }
+    } catch {
       this.setStatus('offline');
     }
+    return false;
+  }
+
+  public async fetchLatest(): Promise<void> {
+    await this.fetchInitial();
+  }
+
+  private applyIncomingData(data: SyncPayload) {
+    if (data.lastUpdated && data.lastUpdated <= this.lastKnownTimestamp) {
+      return;
+    }
+    this.lastKnownTimestamp = data.lastUpdated || Date.now();
+    saveStoredItems(data.items);
+    if (data.config) saveStoredConfig(data.config);
+    this.notifySync(data);
   }
 
   public async addItem(item: ArchiveItem): Promise<boolean> {
-    // 1. Garante que fique salvo no localStorage local imediatamente
     const currentLocal = loadStoredItems();
-    saveStoredItems([...currentLocal, item]);
+    const updatedItems = [...currentLocal, item];
+    const timestamp = Date.now();
+    this.lastKnownTimestamp = timestamp;
 
-    // 2. Envia para o banco de dados do servidor
-    try {
-      const res = await fetch('/api/items', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache',
-        },
-        body: JSON.stringify(item),
-      });
+    // Salva localmente
+    saveStoredItems(updatedItems);
 
-      if (res.ok) {
-        const payload: SyncPayload = await res.json();
-        this.consecutiveErrors = 0;
-        this.setStatus('connected');
-        if (payload.lastUpdated) {
-          this.lastKnownTimestamp = payload.lastUpdated;
-        }
-        return true;
-      }
-    } catch (e) {
-      console.warn('Falha ao enviar item para o backend remoto', e);
-      this.handleFetchError();
-    }
-    return false;
+    const payload: SyncPayload = {
+      items: updatedItems,
+      config: loadStoredItems ? (window as any).__batchConfig || {} : ({} as any),
+      lastUpdated: timestamp,
+    };
+
+    return this.broadcastPayload(payload);
   }
 
   public async syncAll(items: ArchiveItem[], config: BatchConfig): Promise<boolean> {
-    if (this.isSaving) return false;
-    this.isSaving = true;
+    if (this.isPublishing) return false;
+    this.isPublishing = true;
 
-    // Salva no localStorage local
+    const timestamp = Date.now();
+    this.lastKnownTimestamp = timestamp;
+
     saveStoredItems(items);
     saveStoredConfig(config);
 
+    const payload: SyncPayload = {
+      items,
+      config,
+      lastUpdated: timestamp,
+    };
+
     try {
-      const timestamp = Date.now();
+      return await this.broadcastPayload(payload);
+    } finally {
+      this.isPublishing = false;
+    }
+  }
+
+  private async broadcastPayload(payload: SyncPayload): Promise<boolean> {
+    // 1. BroadcastChannel para outras abas locais
+    try {
+      this.broadcastChannel?.postMessage(payload);
+    } catch {}
+
+    let sent = false;
+
+    // 2. Envia para o backend local (se container Node estiver rodando)
+    try {
       const res = await fetch('/api/data', {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache',
-        },
-        body: JSON.stringify({ items, config, lastUpdated: timestamp }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
+      const ct = res.headers.get('content-type') || '';
+      if (res.ok && ct.includes('application/json')) {
+        sent = true;
+      }
+    } catch {}
 
-      if (res.ok) {
-        this.lastKnownTimestamp = timestamp;
-        this.consecutiveErrors = 0;
+    // 3. Publica no canal em nuvem em tempo real (para celular ⇄ computador direto via internet)
+    try {
+      const cloudRes = await fetch(CLOUD_SYNC_PUB_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        body: JSON.stringify(payload),
+      });
+      if (cloudRes.ok) {
+        sent = true;
         this.setStatus('connected');
-        return true;
       }
     } catch (e) {
-      console.warn('Falha ao sincronizar dados com o backend', e);
-      this.handleFetchError();
-    } finally {
-      this.isSaving = false;
+      console.warn('Falha na sincronização em nuvem', e);
     }
-    return false;
+
+    return sent;
   }
 
   public onSync(callback: SyncCallback): () => void {
@@ -212,7 +300,6 @@ class RealtimeSyncManager {
 
   public onStatusChange(callback: StatusCallback): () => void {
     this.onStatusListeners.add(callback);
-    // Dispara o status atual imediatamente para quem se inscreveu
     callback(this.currentStatus);
     return () => this.onStatusListeners.delete(callback);
   }
