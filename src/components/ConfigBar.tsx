@@ -18,6 +18,7 @@ interface ConfigBarProps {
   onLoadSamples: () => void;
   onClearAll: () => void;
   onOpenImportExport: () => void;
+  onOpenConnectMobile?: () => void;
   totalItems: number;
   totalPages: number;
 }
@@ -29,6 +30,7 @@ export const ConfigBar: React.FC<ConfigBarProps> = ({
   onLoadSamples,
   onClearAll,
   onOpenImportExport,
+  onOpenConnectMobile,
   totalItems,
   totalPages,
 }) => {
@@ -176,7 +178,7 @@ export const ConfigBar: React.FC<ConfigBarProps> = ({
             type="button"
             onClick={onLoadSamples}
             title="Preencher com dados de exemplo da Prefeitura de Faina"
-            className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium px-2.5 py-2 rounded-lg border border-slate-300 transition-colors"
+            className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium px-2.5 py-2 rounded-lg border border-slate-300 transition-colors cursor-pointer"
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-600" />
             <span className="hidden md:inline">Exemplos</span>
@@ -187,21 +189,35 @@ export const ConfigBar: React.FC<ConfigBarProps> = ({
             type="button"
             onClick={onOpenImportExport}
             title="Importar ou exportar lote em JSON"
-            className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium px-2.5 py-2 rounded-lg border border-slate-300 transition-colors"
+            className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium px-2.5 py-2 rounded-lg border border-slate-300 transition-colors cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
             <span className="hidden md:inline">JSON</span>
           </button>
+
+          {/* Botão Celular */}
+          {onOpenConnectMobile && (
+            <button
+              type="button"
+              onClick={onOpenConnectMobile}
+              title="Abrir QR Code para preencher pelo celular em tempo real"
+              className="flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-2 rounded-lg border border-emerald-300 transition-colors cursor-pointer"
+            >
+              <span>📱</span>
+              <span className="hidden md:inline">Celular</span>
+            </button>
+          )}
 
           {/* Limpar Tudo */}
           <button
             type="button"
             onClick={onClearAll}
             title="Limpar todos os registros"
-            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg border border-transparent hover:border-red-200 transition-colors"
+            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg border border-transparent hover:border-red-200 transition-colors cursor-pointer"
           >
             <Trash2 className="w-4 h-4" />
           </button>
+
         </div>
       </div>
     </div>

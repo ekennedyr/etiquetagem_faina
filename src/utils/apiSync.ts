@@ -7,21 +7,24 @@ export interface SyncPayload {
   lastUpdated?: number;
 }
 
+export interface NetworkInfo {
+  port: number;
+  networks: { interface: string; ip: string }[];
+  connectedClients: number;
+}
+
 type SyncCallback = (data: SyncPayload) => void;
 type StatusCallback = (status: 'connected' | 'connecting' | 'offline') => void;
 
-// Endpoint persistente em nuvem com alta disponibilidade e suporte a CORS nativo
-const CLOUD_SYNC_OBJECT_ID = 'ff808181a09d98f701a0a13d321e072a';
-const CLOUD_SYNC_URL = `https://api.restful-api.dev/objects/${CLOUD_SYNC_OBJECT_ID}`;
-
 class RealtimeSyncManager {
+  private eventSource: EventSource | null = null;
   private pollInterval: number | null = null;
   private broadcastChannel: BroadcastChannel | null = null;
   private onSyncListeners: Set<SyncCallback> = new Set();
   private onStatusListeners: Set<StatusCallback> = new Set();
   private currentStatus: 'connected' | 'connecting' | 'offline' = 'connecting';
   private lastKnownTimestamp = 0;
-  private isPushing = false;
+  private reconnectTimeout: number | null = null;
 
   constructor() {
     this.init();
@@ -35,18 +38,21 @@ class RealtimeSyncManager {
       this.broadcastChannel = new BroadcastChannel('etiquetas_faina_sync');
       this.broadcastChannel.onmessage = (event) => {
         if (event.data && Array.isArray(event.data.items)) {
-          this.applyIncomingData(event.data);
+          this.applyIncomingData(event.data, false);
         }
       };
     } catch {
       // Ignora se não suportado
     }
 
-    // 2. Sincronização inicial inteligente
-    this.performInitialSync();
+    // 2. Inicia conexão Server-Sent Events (SSE) com o backend local
+    this.connectSSE();
 
-    // 3. Polling em tempo real a cada 1.5s
+    // 3. Fallback de Polling inteligente a cada 2.5s caso o SSE oscile
     this.startPolling();
+
+    // 4. Busca os dados mais recentes na inicialização
+    this.fetchLatest();
   }
 
   private setStatus(status: 'connected' | 'connecting' | 'offline') {
@@ -57,56 +63,88 @@ class RealtimeSyncManager {
   }
 
   /**
-   * Sincronização inicial:
-   * Carrega os dados locais e compara com a nuvem. Se o dispositivo local tiver registros
-   * (ex: 5 itens cadastrados no celular), garante que eles subam para a nuvem caso a nuvem esteja vazia/antiga.
+   * Conecta ao endpoint Server-Sent Events (/api/events) do backend local.
+   * Permite que qualquer alteração feita no celular apareça no computador em milissegundos.
    */
-  private async performInitialSync() {
-    const localItems = loadStoredItems();
-    const localConfig = loadStoredConfig();
+  private connectSSE() {
+    if (typeof window === 'undefined') return;
 
     try {
-      const cloudData = await this.fetchCloudData();
-
-      if (cloudData && Array.isArray(cloudData.items)) {
-        // Se a nuvem tem mais itens ou é mais recente, adota a nuvem
-        if (cloudData.items.length > localItems.length || (cloudData.lastUpdated || 0) > this.lastKnownTimestamp) {
-          this.applyIncomingData(cloudData);
-        } else if (localItems.length > 0 && cloudData.items.length < localItems.length) {
-          // Se o dispositivo local tem mais itens (ex: usuário cadastrou no celular antes do PC abrir), envia para a nuvem
-          await this.pushToCloud({
-            items: localItems,
-            config: localConfig,
-            lastUpdated: Date.now(),
-          });
-        }
-      } else if (localItems.length > 0) {
-        // Se a nuvem não retornou nada, envia os locais
-        await this.pushToCloud({
-          items: localItems,
-          config: localConfig,
-          lastUpdated: Date.now(),
-        });
+      if (this.eventSource) {
+        this.eventSource.close();
       }
 
-      this.setStatus('connected');
+      this.eventSource = new EventSource('/api/events');
+
+      this.eventSource.onopen = () => {
+        this.setStatus('connected');
+      };
+
+      this.eventSource.onmessage = (event) => {
+        try {
+          if (!event.data || event.data.startsWith(':')) return; // ignora pings
+          const data: SyncPayload = JSON.parse(event.data);
+          if (data && Array.isArray(data.items)) {
+            this.applyIncomingData(data, true);
+            this.setStatus('connected');
+          }
+        } catch (err) {
+          console.error('Erro ao processar dados SSE:', err);
+        }
+      };
+
+      this.eventSource.onerror = () => {
+        this.setStatus('connecting');
+        if (this.eventSource) {
+          this.eventSource.close();
+          this.eventSource = null;
+        }
+
+        // Tenta reconectar após 2.5 segundos
+        if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
+        this.reconnectTimeout = window.setTimeout(() => {
+          this.connectSSE();
+        }, 2500);
+      };
     } catch {
-      this.setStatus('offline');
+      this.setStatus('connecting');
     }
   }
 
   private startPolling() {
     if (this.pollInterval) clearInterval(this.pollInterval);
     this.pollInterval = window.setInterval(async () => {
-      // Tenta primeiro no backend local caso esteja rodando Node.js
-      const localOk = await this.fetchLocalData();
-      if (!localOk) {
-        await this.fetchAndApplyCloud();
+      // Se o SSE não estiver ativo ou se o status for connecting/offline, faz polling
+      if (!this.eventSource || this.eventSource.readyState !== EventSource.OPEN) {
+        await this.fetchLatest();
       }
-    }, 1500);
+    }, 2500);
   }
 
-  private async fetchLocalData(): Promise<boolean> {
+  /**
+   * Aplica dados recebidos do servidor e notifica componentes
+   */
+  private applyIncomingData(data: SyncPayload, broadcastToOtherTabs = true) {
+    if (data.lastUpdated && data.lastUpdated <= this.lastKnownTimestamp) {
+      return;
+    }
+    this.lastKnownTimestamp = data.lastUpdated || Date.now();
+    saveStoredItems(data.items);
+    if (data.config) saveStoredConfig(data.config);
+
+    if (broadcastToOtherTabs && this.broadcastChannel) {
+      try {
+        this.broadcastChannel.postMessage(data);
+      } catch {}
+    }
+
+    this.notifySync(data);
+  }
+
+  /**
+   * Busca os dados mais recentes do banco de dados local
+   */
+  public async fetchLatest(): Promise<SyncPayload | null> {
     try {
       const res = await fetch(`/api/data?_t=${Date.now()}`, {
         cache: 'no-store',
@@ -117,90 +155,85 @@ class RealtimeSyncManager {
       if (res.ok && contentType.includes('application/json')) {
         const data: SyncPayload = await res.json();
         if (data && Array.isArray(data.items)) {
-          this.applyIncomingData(data);
+          this.applyIncomingData(data, true);
           this.setStatus('connected');
-          return true;
+          return data;
         }
-      }
-    } catch {
-      // Ignora erro no backend local e segue para a nuvem
-    }
-    return false;
-  }
-
-  private async fetchCloudData(): Promise<SyncPayload | null> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
-
-    try {
-      const res = await fetch(`${CLOUD_SYNC_URL}?_t=${Date.now()}`, {
-        cache: 'no-store',
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-
-      if (res.ok) {
-        const json = await res.json();
-        if (json && json.data && Array.isArray(json.data.items)) {
-          return json.data as SyncPayload;
-        }
-      }
-    } catch {
-      clearTimeout(timeoutId);
-    }
-    return null;
-  }
-
-  private async fetchAndApplyCloud() {
-    if (this.isPushing) return;
-
-    try {
-      const cloudPayload = await this.fetchCloudData();
-      if (cloudPayload && Array.isArray(cloudPayload.items)) {
-        this.applyIncomingData(cloudPayload);
-        this.setStatus('connected');
       }
     } catch {
       this.setStatus('offline');
     }
+    return null;
   }
 
-  private applyIncomingData(data: SyncPayload) {
-    if (data.lastUpdated && data.lastUpdated <= this.lastKnownTimestamp) {
-      return;
-    }
-    this.lastKnownTimestamp = data.lastUpdated || Date.now();
-    saveStoredItems(data.items);
-    if (data.config) saveStoredConfig(data.config);
-    this.notifySync(data);
-  }
-
-  public async fetchLatest(): Promise<void> {
-    await this.performInitialSync();
-  }
-
+  /**
+   * Adiciona um novo item (chamado quando o celular clica em 'PRÓXIMO')
+   */
   public async addItem(item: ArchiveItem): Promise<boolean> {
-    const currentLocal = loadStoredItems();
-    const currentConfig = loadStoredConfig();
-    const updatedItems = [...currentLocal, item];
     const timestamp = Date.now();
     this.lastKnownTimestamp = timestamp;
 
-    // Salva localmente de imediato
+    // Atualiza localmente no navegador de imediato para resposta instantânea
+    const currentLocal = loadStoredItems();
+    const updatedItems = [...currentLocal.filter(i => i.id !== item.id), item];
     saveStoredItems(updatedItems);
 
-    const payload: SyncPayload = {
-      items: updatedItems,
-      config: currentConfig,
-      lastUpdated: timestamp,
-    };
+    try {
+      const res = await fetch('/api/items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(item),
+      });
 
-    return this.broadcastPayload(payload);
+      if (res.ok) {
+        const serverData: SyncPayload = await res.json();
+        if (serverData && Array.isArray(serverData.items)) {
+          this.applyIncomingData(serverData, true);
+        }
+        this.setStatus('connected');
+        return true;
+      }
+    } catch (err) {
+      console.warn('Falha ao enviar item para o servidor local:', err);
+    }
+
+    // Se falhar o POST por instabilidade momentânea, tenta via PUT completo
+    return this.syncAll(updatedItems, loadStoredConfig());
   }
 
-  public async syncAll(items: ArchiveItem[], config: BatchConfig): Promise<boolean> {
-    if (this.isPushing) return false;
+  /**
+   * Remove um item do banco de dados local
+   */
+  public async deleteItem(id: string): Promise<boolean> {
+    const currentLocal = loadStoredItems();
+    const updatedItems = currentLocal.filter((i) => i.id !== id);
+    saveStoredItems(updatedItems);
+    this.lastKnownTimestamp = Date.now();
 
+    try {
+      const res = await fetch(`/api/items/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+
+      if (res.ok) {
+        const serverData: SyncPayload = await res.json();
+        if (serverData && Array.isArray(serverData.items)) {
+          this.applyIncomingData(serverData, true);
+        }
+        this.setStatus('connected');
+        return true;
+      }
+    } catch (err) {
+      console.warn('Falha ao excluir item do servidor local:', err);
+    }
+
+    return this.syncAll(updatedItems, loadStoredConfig());
+  }
+
+  /**
+   * Sincroniza a lista inteira de itens e configurações com o banco de dados local
+   */
+  public async syncAll(items: ArchiveItem[], config: BatchConfig): Promise<boolean> {
     const timestamp = Date.now();
     this.lastKnownTimestamp = timestamp;
 
@@ -213,53 +246,41 @@ class RealtimeSyncManager {
       lastUpdated: timestamp,
     };
 
-    return this.broadcastPayload(payload);
-  }
-
-  private async broadcastPayload(payload: SyncPayload): Promise<boolean> {
-    // 1. BroadcastChannel para outras abas no mesmo navegador
+    // Propaga para outras abas locais
     try {
       this.broadcastChannel?.postMessage(payload);
     } catch {}
 
-    // 2. Envia para o backend local caso disponível
     try {
-      fetch('/api/data', {
+      const res = await fetch('/api/data', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-      }).catch(() => {});
-    } catch {}
-
-    // 3. Envia para a nuvem de alta disponibilidade (computador ⇄ celular em tempo real)
-    return this.pushToCloud(payload);
-  }
-
-  private async pushToCloud(payload: SyncPayload): Promise<boolean> {
-    this.isPushing = true;
-    try {
-      const res = await fetch(CLOUD_SYNC_URL, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: 'etiquetas_faina_cgm_dataset',
-          data: payload,
-        }),
       });
 
       if (res.ok) {
         this.setStatus('connected');
         return true;
       }
-    } catch (e) {
-      console.warn('Falha ao sincronizar nuvem:', e);
+    } catch {
       this.setStatus('offline');
-    } finally {
-      this.isPushing = false;
     }
     return false;
+  }
+
+  /**
+   * Obtém os endereços IPs da máquina na rede local
+   */
+  public async getNetworkInfo(): Promise<NetworkInfo | null> {
+    try {
+      const res = await fetch('/api/network-info', {
+        cache: 'no-store',
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {}
+    return null;
   }
 
   public onSync(callback: SyncCallback): () => void {
@@ -279,3 +300,4 @@ class RealtimeSyncManager {
 }
 
 export const syncManager = new RealtimeSyncManager();
+

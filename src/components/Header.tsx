@@ -7,6 +7,7 @@ import {
   Eye,
   Info,
   Building2,
+  Smartphone,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -19,6 +20,7 @@ interface HeaderProps {
   config: BatchConfig;
   totalItems: number;
   syncStatus?: 'connected' | 'connecting' | 'offline';
+  onOpenConnectMobile?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -31,6 +33,7 @@ export const Header: React.FC<HeaderProps> = ({
   config,
   totalItems,
   syncStatus = 'connected',
+  onOpenConnectMobile,
 }) => {
   return (
     <header className="bg-slate-900 text-white border-b border-slate-800 shadow-md print:hidden select-none">
@@ -60,10 +63,10 @@ export const Header: React.FC<HeaderProps> = ({
               <div
                 title={
                   syncStatus === 'connected'
-                    ? 'Sincronizado em tempo real com celular e outros dispositivos'
+                    ? 'Banco de dados local conectado em tempo real'
                     : syncStatus === 'connecting'
-                    ? 'Conectando ao servidor em tempo real...'
-                    : 'Modo Offline (Salvo localmente)'
+                    ? 'Conectando ao banco de dados local...'
+                    : 'Modo Offline (Salvo localmente no computador)'
                 }
                 className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border transition-all ${
                   syncStatus === 'connected'
@@ -84,7 +87,7 @@ export const Header: React.FC<HeaderProps> = ({
                 />
                 <span className="hidden sm:inline">
                   {syncStatus === 'connected'
-                    ? 'Tempo Real'
+                    ? 'Banco Local Ativo'
                     : syncStatus === 'connecting'
                     ? 'Conectando...'
                     : 'Offline'}
@@ -102,7 +105,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('spreadsheet')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               activeTab === 'spreadsheet'
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'text-slate-400 hover:text-slate-200'
@@ -118,7 +121,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('preview')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               activeTab === 'preview'
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'text-slate-400 hover:text-slate-200'
@@ -131,7 +134,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('mobile')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               activeTab === 'mobile'
                 ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-sm'
                 : 'text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/40'
@@ -142,14 +145,27 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </div>
 
-        {/* Ações de Impressão e PDF */}
+        {/* Ações de Conexão Móvel, Impressão e PDF */}
         <div className="flex items-center gap-2.5">
+          {/* Botão Conectar Celular / QR Code */}
+          {onOpenConnectMobile && (
+            <button
+              type="button"
+              onClick={onOpenConnectMobile}
+              className="flex items-center gap-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 hover:text-white border border-emerald-500/40 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
+              title="Abrir QR Code e link para o celular enviar dados em tempo real"
+            >
+              <Smartphone className="w-4 h-4 text-emerald-400" />
+              <span className="hidden md:inline">Conectar Celular</span>
+            </button>
+          )}
+
           {/* Botão de Download Direto em PDF */}
           <button
             type="button"
             onClick={onGeneratePdf}
             disabled={isGeneratingPdf || totalItems === 0}
-            className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white font-bold text-xs px-3.5 py-2 rounded-xl border border-slate-700 transition-all shadow-xs"
+            className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white font-bold text-xs px-3.5 py-2 rounded-xl border border-slate-700 transition-all shadow-xs cursor-pointer"
           >
             <FileDown className="w-4 h-4 text-amber-400" />
             <span>
@@ -166,7 +182,7 @@ export const Header: React.FC<HeaderProps> = ({
             type="button"
             onClick={onPrint}
             disabled={totalItems === 0}
-            className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-xs px-4 py-2 rounded-xl shadow-md transition-all active:scale-98"
+            className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-xs px-4 py-2 rounded-xl shadow-md transition-all active:scale-98 cursor-pointer"
           >
             <Printer className="w-4 h-4 text-white" />
             <span>Imprimir em Tamanho Real</span>
@@ -191,3 +207,4 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
+

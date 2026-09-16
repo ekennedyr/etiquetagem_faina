@@ -18,8 +18,10 @@ import { MobileFormView } from './components/MobileFormView';
 import { PrintContainer } from './components/PrintContainer';
 import { SheetPreview } from './components/SheetPreview';
 import { ImportExportModal } from './components/ImportExportModal';
+import { ConnectMobileModal } from './components/ConnectMobileModal';
 
 import { syncManager } from './utils/apiSync';
+
 
 function detectInitialTab(): 'spreadsheet' | 'preview' | 'mobile' {
   if (typeof window === 'undefined') return 'spreadsheet';
@@ -54,11 +56,13 @@ export const App: React.FC = () => {
   const [config, setConfig] = useState<BatchConfig>(loadStoredConfig);
   const [activeTab, setActiveTab] = useState<'spreadsheet' | 'preview' | 'mobile'>(detectInitialTab);
   const [isImportExportOpen, setIsImportExportOpen] = useState<boolean>(false);
+  const [isConnectMobileOpen, setIsConnectMobileOpen] = useState<boolean>(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
   const [pdfProgress, setPdfProgress] = useState<{ current: number; total: number } | null>(null);
   const [syncStatus, setSyncStatus] = useState<'connected' | 'connecting' | 'offline'>('connecting');
 
   const printRootRef = useRef<HTMLDivElement>(null);
+
 
   // Sincronização em Tempo Real (SSE + Polling de fallback)
   useEffect(() => {
@@ -218,8 +222,9 @@ export const App: React.FC = () => {
     if (rawItems.length <= 1) return;
     const updated = rawItems.filter((item) => item.id !== id);
     setRawItems(updated);
-    syncManager.syncAll(updated, config);
+    syncManager.deleteItem(id);
   };
+
 
   // Mover item para cima ou para baixo
   const handleMoveItem = (index: number, direction: 'up' | 'down') => {
@@ -335,6 +340,7 @@ export const App: React.FC = () => {
         config={config}
         totalItems={processedItems.length}
         syncStatus={syncStatus}
+        onOpenConnectMobile={() => setIsConnectMobileOpen(true)}
       />
 
       {/* Barra de Configurações Globais */}
@@ -345,9 +351,11 @@ export const App: React.FC = () => {
         onLoadSamples={handleLoadSamples}
         onClearAll={handleClearAll}
         onOpenImportExport={() => setIsImportExportOpen(true)}
+        onOpenConnectMobile={() => setIsConnectMobileOpen(true)}
         totalItems={processedItems.length}
         totalPages={totalPages}
       />
+
 
       {/* Área Principal de Conteúdo */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 flex flex-col">
@@ -417,6 +425,13 @@ export const App: React.FC = () => {
         items={rawItems}
         config={config}
         onImportData={handleImportData}
+      />
+
+      {/* Modal de Conexão com Celular (QR Code / IP da Rede Local) */}
+      <ConnectMobileModal
+        isOpen={isConnectMobileOpen}
+        onClose={() => setIsConnectMobileOpen(false)}
+        syncStatus={syncStatus}
       />
     </div>
   );

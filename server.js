@@ -1,6 +1,7 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -77,6 +78,25 @@ function saveDatabase(data) {
 
 let db = loadDatabase();
 
+// Obter endereços IPs da máquina na rede local (Wi-Fi / Ethernet)
+function getLocalNetworkAddresses() {
+  const interfaces = os.networkInterfaces();
+  const addresses = [];
+
+  for (const name of Object.keys(interfaces)) {
+    for (const net of interfaces[name] || []) {
+      // Pega apenas IPv4 e não-interno (evita 127.0.0.1)
+      if (net.family === 'IPv4' && !net.internal) {
+        addresses.push({
+          interface: name,
+          ip: net.address,
+        });
+      }
+    }
+  }
+  return addresses;
+}
+
 // Lista de conexões ativas do Server-Sent Events (SSE)
 const sseClients = new Set();
 
@@ -91,7 +111,7 @@ function broadcastSSE(data) {
   }
 }
 
-// Ping para manter conexões SSE ativas em proxies/Coolify
+// Ping para manter conexões SSE ativas em proxies, navegadores móveis e conexões Wi-Fi
 setInterval(() => {
   for (const client of sseClients) {
     try {
@@ -100,7 +120,7 @@ setInterval(() => {
       sseClients.delete(client);
     }
   }
-}, 15000);
+}, 10000);
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -120,10 +140,10 @@ const MIME_TYPES = {
 };
 
 const server = http.createServer((req, res) => {
-  // CORS Headers para compatibilidade
+  // CORS Headers universais para permitir conexões de qualquer dispositivo/porta na rede
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
@@ -134,20 +154,35 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = url.pathname;
 
-  // Endpoint de Saúde do Container: /api/health
+  // 1. Endpoint de Saúde: /api/health
   if (pathname === '/api/health' && req.method === 'GET') {
     res.writeHead(200, {
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'no-cache, no-store, must-revalidate',
     });
-    res.end(JSON.stringify({ status: 'ok', uptime: process.uptime(), count: db.items.length }));
+    res.end(JSON.stringify({ status: 'ok', uptime: process.uptime(), count: db.items.length, clients: sseClients.size }));
     return;
   }
 
-  // 1. Endpoint SSE: /api/events
+  // 2. Endpoint de Informações de Rede: /api/network-info
+  if (pathname === '/api/network-info' && req.method === 'GET') {
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+    });
+    const networks = getLocalNetworkAddresses();
+    res.end(JSON.stringify({
+      port: PORT,
+      networks,
+      connectedClients: sseClients.size,
+    }));
+    return;
+  }
+
+  // 3. Endpoint SSE: /api/events (Streaming em tempo real bidirecional)
   if (pathname === '/api/events' && req.method === 'GET') {
     res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
+      'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
@@ -161,7 +196,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // 2. Endpoint GET /api/data
+  // 4. Endpoint GET /api/data
   if (pathname === '/api/data' && req.method === 'GET') {
     res.writeHead(200, {
       'Content-Type': 'application/json; charset=utf-8',
@@ -172,7 +207,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // 3. Endpoint POST /api/items (Adicionar item em tempo real)
+  // 5. Endpoint POST /api/items (Adicionar item do celular ou PC)
   if (pathname === '/api/items' && req.method === 'POST') {
     let body = '';
     req.on('data', (chunk) => {
@@ -182,6 +217,7 @@ const server = http.createServer((req, res) => {
       try {
         const newItem = JSON.parse(body);
         if (newItem && newItem.id) {
+          // Adiciona ao banco de dados local
           db.items.push(newItem);
           db.lastUpdated = Date.now();
           saveDatabase(db);
@@ -200,7 +236,25 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // 4. Endpoint PUT /api/data (Atualizar lote completo ou configurações)
+  // 6. Endpoint DELETE /api/items/:id (Remover item)
+  if (pathname.startsWith('/api/items/') && req.method === 'DELETE') {
+    const itemId = pathname.replace('/api/items/', '').trim();
+    if (itemId) {
+      db.items = db.items.filter((item) => item.id !== itemId);
+      db.lastUpdated = Date.now();
+      saveDatabase(db);
+      broadcastSSE(db);
+
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(db));
+      return;
+    }
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'ID do item ausente' }));
+    return;
+  }
+
+  // 7. Endpoint PUT /api/data (Atualizar lote completo ou configurações)
   if (pathname === '/api/data' && req.method === 'PUT') {
     let body = '';
     req.on('data', (chunk) => {
@@ -231,7 +285,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // 5. Servir arquivos estáticos do frontend compilado em dist/
+  // 8. Servir arquivos estáticos do frontend compilado em dist/
   let filePath = path.join(DIST_DIR, pathname);
 
   // Segurança contra Directory Traversal
@@ -250,7 +304,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // SPA Fallback: serve dist/index.html para qualquer rota (ex: /formulario, /mobile)
+  // SPA Fallback: serve dist/index.html para qualquer rota (ex: /formulario, /mobile, /preview)
   const indexPath = path.join(DIST_DIR, 'index.html');
   if (fs.existsSync(indexPath)) {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -263,4 +317,12 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Servidor de Etiquetagem Faina rodando em http://0.0.0.0:${PORT}`);
+  const networks = getLocalNetworkAddresses();
+  if (networks.length > 0) {
+    console.log(`📱 Acesso na rede local / Celular:`);
+    networks.forEach((net) => {
+      console.log(`   - http://${net.ip}:${PORT}/#/formulario (${net.interface})`);
+    });
+  }
 });
+
