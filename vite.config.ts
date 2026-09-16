@@ -106,22 +106,31 @@ function apiDevPlugin(): Plugin {
     });
   }
 
-  // Ping periódico
-  setInterval(() => {
-    sseClients.forEach((res) => {
-      try {
-        res.write(': ping\n\n');
-      } catch {
-        sseClients.delete(res);
-      }
-    });
-  }, 10000);
-
   return {
     name: 'api-dev-server',
     configureServer(server) {
+      // Ping periódico apenas enquanto o dev server estiver ativo
+      const pingTimer = setInterval(() => {
+        sseClients.forEach((res) => {
+          try {
+            res.write(': ping\n\n');
+          } catch {
+            sseClients.delete(res);
+          }
+        });
+      }, 10000);
+
+      if (pingTimer.unref) {
+        pingTimer.unref();
+      }
+
+      server.httpServer?.on('close', () => {
+        clearInterval(pingTimer);
+      });
+
       server.middlewares.use((req, res, next) => {
         const url = req.url?.split('?')[0];
+
 
         // Headers CORS
         res.setHeader('Access-Control-Allow-Origin', '*');
